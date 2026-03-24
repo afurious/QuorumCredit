@@ -52,6 +52,7 @@ pub struct LoanRecord {
     pub repaid: bool,
     pub defaulted: bool,
     pub created_at: u64, // ledger timestamp
+    pub disbursement_timestamp: u64,
     pub deadline: u64,   // repayment deadline (ledger timestamp)
 }
 
@@ -200,6 +201,7 @@ impl QuorumCreditContract {
                 repaid: false,
                 defaulted: false,
                 created_at: now,
+                disbursement_timestamp: now,
                 deadline,
             },
         );
@@ -1066,4 +1068,21 @@ mod tests {
 
         assert_eq!(client.get_admin(), admin);
     }
+
+    #[test]
+    fn test_loan_records_disbursement_timestamp() {
+        let env = Env::default();
+        env.ledger().set_timestamp(1_234_567);
+        let (contract_id, _token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.request_loan(&borrower, &500_000, &1_000_000);
+
+        let loan = client.get_loan(&borrower).unwrap();
+        assert_eq!(loan.disbursement_timestamp, 1_234_567);
+        assert_eq!(loan.created_at, 1_234_567);
+        assert!(loan.deadline > 1_234_567);
+    }
 }
+
