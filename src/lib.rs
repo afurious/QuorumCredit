@@ -40,6 +40,7 @@ pub enum DataKey {
     SlashTreasury,    // i128 accumulated slashed funds
     Paused,           // bool: true when contract is paused
     LoanDuration,     // u64 configurable loan duration in seconds
+    CreditHistory(Address), // borrower → CreditHistory
 }
 
 // ── Data Types ────────────────────────────────────────────────────────────────
@@ -60,6 +61,13 @@ pub struct LoanRecord {
 pub struct VouchRecord {
     pub voucher: Address,
     pub stake: i128, // in stroops
+}
+
+#[contracttype]
+#[derive(Clone, Default)]
+pub struct CreditHistory {
+    pub repayments: u32,
+    pub defaults: u32,
 }
 
 // ── Contract ──────────────────────────────────────────────────────────────────
@@ -266,7 +274,18 @@ impl QuorumCreditContract {
         loan.repaid = true;
         env.storage()
             .persistent()
-            .set(&DataKey::Loan(borrower), &loan);
+            .set(&DataKey::Loan(borrower.clone()), &loan);
+
+        // Update credit history.
+        let mut history: CreditHistory = env
+            .storage()
+            .persistent()
+            .get(&DataKey::CreditHistory(borrower.clone()))
+            .unwrap_or_default();
+        history.repayments += 1;
+        env.storage()
+            .persistent()
+            .set(&DataKey::CreditHistory(borrower), &history);
 
         Ok(())
     }
@@ -319,6 +338,17 @@ impl QuorumCreditContract {
         env.storage()
             .persistent()
             .set(&DataKey::Loan(borrower.clone()), &loan);
+
+        // Update credit history.
+        let mut history: CreditHistory = env
+            .storage()
+            .persistent()
+            .get(&DataKey::CreditHistory(borrower.clone()))
+            .unwrap_or_default();
+        history.defaults += 1;
+        env.storage()
+            .persistent()
+            .set(&DataKey::CreditHistory(borrower.clone()), &history);
 
         // Clear vouches after slashing to prevent state pollution.
         env.storage()
@@ -477,6 +507,17 @@ impl QuorumCreditContract {
             .persistent()
             .set(&DataKey::Loan(borrower.clone()), &loan);
 
+        // Update credit history.
+        let mut history: CreditHistory = env
+            .storage()
+            .persistent()
+            .get(&DataKey::CreditHistory(borrower.clone()))
+            .unwrap_or_default();
+        history.defaults += 1;
+        env.storage()
+            .persistent()
+            .set(&DataKey::CreditHistory(borrower.clone()), &history);
+
         env.storage()
             .persistent()
             .remove(&DataKey::Vouches(borrower));
@@ -557,6 +598,24 @@ impl QuorumCreditContract {
 
     pub fn get_vouches(env: Env, borrower: Address) -> Option<Vec<VouchRecord>> {
         env.storage().persistent().get(&DataKey::Vouches(borrower))
+    }
+
+    /// Returns a credit score in the range [0, 1000] based on repayment history.
+    /// Borrowers with no history receive the baseline score of 500.
+    /// Formula: score = (repayments / (repayments + defaults)) * 1000
+    pub fn get_credit_score(env: Env, borrower: Address) -> u32 {
+        let history: CreditHistory = env
+            .storage()
+            .persistent()
+            .get(&DataKey::CreditHistory(borrower))
+            .unwrap_or_default();
+
+        let total = history.repayments + history.defaults;
+        if total == 0 {
+            return 500;
+        }
+        // Safe: total > 0, result fits in u32 (max 1000).
+        history.repayments * 1_000 / total
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -1065,5 +1124,71 @@ mod tests {
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
         assert_eq!(client.get_admin(), admin);
+    }
+
+    // ── Credit Score Tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_credit_score_new_borrower_returns_baseline() {
+        let env = Env::default();
+        let (contract_id, _token_addr, _admin, borrower, _voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        assert_eq!(client.get_credit_score(&borrower), 500);
+    }
+
+    #[test]
+    fn test_credit_score_perfect_repayment() {
+        let env = Env::default();
+        env.ledger().set_timestamp(1_000_000);
+        let (contract_id, token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+        let token_admin = StellarAssetClient::new(&env, &token_addr);
+
+        // Complete 3 full loan cycles without any default.
+        for _ in 0..3 {
+            client.vouch(&voucher, &borrower, &1_000_000);
+            client.request_loan(&borrower, &500_000, &1_000_000);
+            // Fund borrower so they can repay.
+            token_admin.mint(&borrower, &500_000);
+            client.repay(&borrower);
+            // Withdraw the vouch so it can be re-used next cycle.
+            client.withdraw_vouch(&voucher, &borrower);
+        }
+
+        assert_eq!(client.get_credit_score(&borrower), 1_000);
+    }
+
+    #[test]
+    fn test_credit_score_mixed_history() {
+        let env = Env::default();
+        env.ledger().set_timestamp(1_000_000);
+        let (contract_id, token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+        let token_admin = StellarAssetClient::new(&env, &token_addr);
+
+        // Cycle 1: repay → repayments=1, defaults=0
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.request_loan(&borrower, &500_000, &1_000_000);
+        token_admin.mint(&borrower, &500_000);
+        client.repay(&borrower);
+        client.withdraw_vouch(&voucher, &borrower);
+
+        // Cycle 2: repay → repayments=2, defaults=0
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.request_loan(&borrower, &500_000, &1_000_000);
+        token_admin.mint(&borrower, &500_000);
+        client.repay(&borrower);
+        client.withdraw_vouch(&voucher, &borrower);
+
+        // Cycle 3: default → repayments=2, defaults=1
+        // Re-fund voucher (they lost stake in previous cycles' yield payouts)
+        token_admin.mint(&voucher, &1_000_000);
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.request_loan(&borrower, &500_000, &1_000_000);
+        client.slash(&borrower);
+
+        // score = 2 / (2 + 1) * 1000 = 666
+        assert_eq!(client.get_credit_score(&borrower), 666);
     }
 }
