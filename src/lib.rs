@@ -53,6 +53,7 @@ pub enum DataKey {
     Paused,           // bool: true when contract is paused
     ReputationNft,    // Address of the ReputationNftContract
     Config,           // Config struct: all configurable protocol parameters
+    ReputationNft,    // Address of the ReputationNftContract
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
@@ -241,13 +242,17 @@ impl QuorumCreditContract {
         );
         assert!(threshold > 0, "threshold must be greater than zero");
 
-        // Prevent multiple active loans.
-        assert!(
-            !env.storage()
-                .persistent()
-                .has(&DataKey::Loan(borrower.clone())),
-            "borrower already has an active loan"
-        );
+        // Prevent overwriting an active loan record.
+        if let Some(existing) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, LoanRecord>(&DataKey::Loan(borrower.clone()))
+        {
+            assert!(
+                existing.repaid || existing.defaulted,
+                "borrower already has an active loan"
+            );
+        }
 
         let vouches: Vec<VouchRecord> = env
             .storage()
@@ -1111,6 +1116,19 @@ mod tests {
             result.is_err(),
             "expected error when loan amount exceeds maximum collateral ratio"
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "borrower already has an active loan")]
+    fn test_request_loan_rejects_overwrite_of_active_loan() {
+        let env = Env::default();
+        let (contract_id, _token_addr, _admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.request_loan(&borrower, &500_000, &1_000_000);
+        // Second request while first loan is still active must panic.
+        client.request_loan(&borrower, &500_000, &1_000_000);
     }
 
     #[test]
