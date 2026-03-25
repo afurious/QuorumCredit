@@ -621,28 +621,39 @@ impl QuorumCreditContract {
     /// Admin marks a loan defaulted; slash_bps% of each voucher's stake is slashed.
     pub fn slash(env: Env, admin_signers: Vec<Address>, borrower: Address) {
         Self::require_admin_approval(&env, &admin_signers);
-
         Self::require_not_paused(&env).expect("contract is paused");
+        Self::slash_borrower(&env, &borrower);
+    }
 
-        // ── CHECKS ────────────────────────────────────────────────────────────
+    /// Admin slashes multiple defaulters in a single transaction.
+    /// Reuses the same slash logic per borrower; panics on the first invalid borrower.
+    pub fn batch_slash(env: Env, admin_signers: Vec<Address>, borrowers: Vec<Address>) {
+        Self::require_admin_approval(&env, &admin_signers);
+        Self::require_not_paused(&env).expect("contract is paused");
+        for borrower in borrowers.iter() {
+            Self::slash_borrower(&env, &borrower);
+        }
+    }
+
+    fn slash_borrower(env: &Env, borrower: &Address) {
         let mut loan: LoanRecord = env
             .storage()
             .persistent()
             .get(&DataKey::Loan(borrower.clone()))
             .expect("no active loan");
 
-        // Guard: only an active (non-repaid, non-defaulted) loan may be slashed.
         if loan.repaid || loan.defaulted {
-            panic_with_error!(&env, ContractError::InvalidStateTransition);
+            panic_with_error!(env, ContractError::InvalidStateTransition);
         }
 
-        let cfg = Self::config(&env);
+        let cfg = Self::config(env);
         let vouches: Vec<VouchRecord> = env
             .storage()
             .persistent()
             .get(&DataKey::Vouches(borrower.clone()))
-            .unwrap_or(Vec::new(&env));
+            .unwrap_or(Vec::new(env));
 
+        let token = Self::token(env);
         let mut total_slashed: i128 = 0;
         for v in vouches.iter() {
             let slash_amount = v.stake * cfg.slash_bps / 10_000;
@@ -650,34 +661,38 @@ impl QuorumCreditContract {
             if returned > 0 {
                 token.transfer(&env.current_contract_address(), &v.voucher, &returned);
             }
-            let treasury: i128 = env
-                .storage()
-                .instance()
-                .get(&DataKey::SlashTreasury)
-                .unwrap_or(0);
-            env.storage()
-                .instance()
-                .set(&DataKey::SlashTreasury, &(treasury + slash_amount));
             total_slashed += slash_amount;
         }
 
-        // Burn one reputation point if a reputation NFT contract is configured.
+        let treasury: i128 = env
+            .storage()
+            .instance()
+            .get(&DataKey::SlashTreasury)
+            .unwrap_or(0);
+        env.storage()
+            .instance()
+            .set(&DataKey::SlashTreasury, &(treasury + total_slashed));
+
+        loan.defaulted = true;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Loan(borrower.clone()), &loan);
+
+        env.storage()
+            .persistent()
+            .remove(&DataKey::Vouches(borrower.clone()));
+
         if let Some(nft_addr) = env
             .storage()
             .instance()
             .get::<DataKey, Address>(&DataKey::ReputationNft)
         {
-            ReputationNftExternalClient::new(&env, &nft_addr).burn(&borrower);
+            ReputationNftExternalClient::new(env, &nft_addr).burn(borrower);
         }
-
-        // Clear vouches after slashing to prevent state pollution.
-        env.storage()
-            .persistent()
-            .remove(&DataKey::Vouches(borrower.clone()));
 
         env.events().publish(
             (symbol_short!("loan"), symbol_short!("slashed")),
-            (borrower, loan.amount, total_slashed),
+            (borrower.clone(), loan.amount, total_slashed),
         );
     }
 
@@ -3253,5 +3268,64 @@ mod tests {
         let client = QuorumCreditContractClient::new(&env, &contract_id);
 
         assert!(client.get_loan_pool(&999u64).is_none());
+    }
+
+    // ── Batch Slash Tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_batch_slash_slashes_multiple_borrowers() {
+        let env = Env::default();
+        let (contract_id, token_addr, admin, _borrower, _voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+        let token_admin = StellarAssetClient::new(&env, &token_addr);
+        let token = TokenClient::new(&env, &token_addr);
+        let admin_signers = single_admin_signers(&env, &admin);
+
+        let borrower1 = Address::generate(&env);
+        let borrower2 = Address::generate(&env);
+        let voucher1 = Address::generate(&env);
+        let voucher2 = Address::generate(&env);
+        token_admin.mint(&voucher1, &10_000_000);
+        token_admin.mint(&voucher2, &10_000_000);
+
+        client.vouch(&voucher1, &borrower1, &1_000_000);
+        client.request_loan(&borrower1, &Vec::new(&env), &500_000, &1_000_000);
+
+        client.vouch(&voucher2, &borrower2, &2_000_000);
+        client.request_loan(&borrower2, &Vec::new(&env), &1_000_000, &2_000_000);
+
+        let mut borrowers = Vec::new(&env);
+        borrowers.push_back(borrower1.clone());
+        borrowers.push_back(borrower2.clone());
+
+        client.batch_slash(&admin_signers, &borrowers);
+
+        assert!(client.get_loan(&borrower1).unwrap().defaulted);
+        assert!(client.get_loan(&borrower2).unwrap().defaulted);
+        // voucher1: 10_000_000 - 1_000_000 stake + 500_000 returned = 9_500_000
+        assert_eq!(token.balance(&voucher1), 9_500_000);
+        // voucher2: 10_000_000 - 2_000_000 stake + 1_000_000 returned = 9_000_000
+        assert_eq!(token.balance(&voucher2), 9_000_000);
+        // treasury: 500_000 + 1_000_000
+        assert_eq!(client.get_slash_treasury(), 1_500_000);
+    }
+
+    #[test]
+    #[should_panic(expected = "no active loan")]
+    fn test_batch_slash_panics_on_invalid_borrower() {
+        let env = Env::default();
+        let (contract_id, _token_addr, admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+        let admin_signers = single_admin_signers(&env, &admin);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.request_loan(&borrower, &Vec::new(&env), &500_000, &1_000_000);
+
+        let no_loan_borrower = Address::generate(&env);
+        let mut borrowers = Vec::new(&env);
+        borrowers.push_back(borrower.clone());
+        borrowers.push_back(no_loan_borrower);
+
+        client.batch_slash(&admin_signers, &borrowers);
     }
 }
