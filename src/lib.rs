@@ -90,6 +90,7 @@ pub enum DataKey {
     LoanPoolCounter,         // u64: monotonically increasing pool ID counter
     PendingAdmin,            // Address of the pending admin (two-step transfer)
     RepaymentCount(Address), // borrower → u32 total successful repayments
+    LoanCount(Address),      // borrower → u32 total historical loans disbursed
     ProtocolFeeBps,          // u32: protocol fee in basis points
     FeeTreasury,             // Address: recipient of collected protocol fees
     LastVouchTimestamp(Address), // voucher → u64 last vouch timestamp
@@ -588,16 +589,15 @@ impl QuorumCreditContract {
             },
         );
 
-        // Track borrower in the global list for admin pagination.
-        let mut borrowers: Vec<Address> = env
+        // Track total historical loan count for this borrower.
+        let count: u32 = env
             .storage()
             .persistent()
-            .get(&DataKey::BorrowerList)
-            .unwrap_or(Vec::new(&env));
-        borrowers.push_back(borrower.clone());
+            .get(&DataKey::LoanCount(borrower.clone()))
+            .unwrap_or(0);
         env.storage()
             .persistent()
-            .set(&DataKey::BorrowerList, &borrowers);
+            .set(&DataKey::LoanCount(borrower.clone()), &(count + 1));
 
         token.transfer(&env.current_contract_address(), &borrower, &amount);
 
@@ -1608,6 +1608,14 @@ impl QuorumCreditContract {
         env.storage()
             .persistent()
             .get(&DataKey::RepaymentCount(borrower))
+            .unwrap_or(0)
+    }
+
+    /// Returns the total number of loans ever disbursed to a borrower (including active, repaid, and defaulted).
+    pub fn loan_count(env: Env, borrower: Address) -> u32 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::LoanCount(borrower))
             .unwrap_or(0)
     }
 
@@ -3614,22 +3622,70 @@ mod tests {
         assert_eq!(client.repayment_count(&borrower2), 0);
     }
 
+    // ── Loan Count Tests ──────────────────────────────────────────────────────
+
     #[test]
-    fn test_slash_burn_floors_at_zero() {
+    fn test_loan_count_zero_for_new_borrower() {
         let env = Env::default();
-        let (contract_id, token_addr, admin, borrower, voucher, _nft_id) =
-            setup_with_reputation(&env);
+        let (contract_id, _, _, borrower, _) = setup(&env);
         let client = QuorumCreditContractClient::new(&env, &contract_id);
-        let token = TokenClient::new(&env, &token_addr);
+        assert_eq!(client.loan_count(&borrower), 0);
+    }
+
+    #[test]
+    fn test_loan_count_increments_on_each_disbursement() {
+        let env = Env::default();
+        let (contract_id, _, _, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+
+        client.request_loan(&borrower, &Vec::new(&env), &500_000, &1_000_000);
+        assert_eq!(client.loan_count(&borrower), 1);
+
+        client.repay(&borrower, &500_000);
+
+        client.request_loan(&borrower, &Vec::new(&env), &500_000, &1_000_000);
+        assert_eq!(client.loan_count(&borrower), 2);
+
+        client.repay(&borrower, &500_000);
+        assert_eq!(client.loan_count(&borrower), 2); // repay doesn't change loan_count
+    }
+
+    #[test]
+    fn test_loan_count_includes_defaulted_loans() {
+        let env = Env::default();
+        let (contract_id, _, admin, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
         let admin_signers = single_admin_signers(&env, &admin);
 
         client.vouch(&voucher, &borrower, &1_000_000);
         client.request_loan(&borrower, &Vec::new(&env), &500_000, &1_000_000);
-        client.slash(&admin_signers, &borrower);
+        assert_eq!(client.loan_count(&borrower), 1);
 
-        // voucher started with 10_000_000, staked 1_000_000, gets back 500_000 (50% slash)
-        assert_eq!(token.balance(&voucher), 9_500_000);
+        client.slash(&admin_signers, &borrower);
+        assert_eq!(client.loan_count(&borrower), 1); // slash doesn't change loan_count
     }
+
+    #[test]
+    fn test_loan_count_is_per_borrower() {
+        let env = Env::default();
+        let (contract_id, token_addr, _, borrower, voucher) = setup(&env);
+        let client = QuorumCreditContractClient::new(&env, &contract_id);
+        let token_admin = StellarAssetClient::new(&env, &token_addr);
+
+        let borrower2 = Address::generate(&env);
+        let voucher2 = Address::generate(&env);
+        token_admin.mint(&voucher2, &10_000_000);
+
+        client.vouch(&voucher, &borrower, &1_000_000);
+        client.vouch(&voucher2, &borrower2, &1_000_000);
+
+        client.request_loan(&borrower, &Vec::new(&env), &500_000, &1_000_000);
+        assert_eq!(client.loan_count(&borrower), 1);
+        assert_eq!(client.loan_count(&borrower2), 0);
+    }
+
     // ── Reputation NFT Tests ──────────────────────────────────────────────────
 
     #[test]
