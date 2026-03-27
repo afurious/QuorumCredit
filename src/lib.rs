@@ -35,6 +35,8 @@ mod duplicate_loan_test;
 
 #[cfg(test)]
 mod slash_multi_voucher_test;
+#[cfg(test)]
+mod paused_state_test;
 
 pub use errors::ContractError;
 pub use types::*;
