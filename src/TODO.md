@@ -1,11 +1,7 @@
-# QuorumCredit TODO / Progress Tracker
+# Issue 139: Add Test - Slash with Multiple Vouchers — All Lose 50%
 
-## Active Tasks
-*(none)*
-
-## Completed Tasks
-- Issue #137: Slash precision test fully implemented and verified ✅
-- Issue #138: Repay multi-voucher yield test implemented in src/repay_multi_voucher_yield_test.rs
-  - 3 vouchers (300k/200k/100k stakes)
-  - Repay asserts stake + proportional 2% yield each
-  - Vouches cleared post-repay ✅
+## Steps
+- [x] 1. Create src/slash_multi_voucher_test.rs
+- [x] 2. Add mod export to src/lib.rs
+- [x] 3. Run `cargo test slash_multi_voucher -- --nocapture` to verify
+- [x] 4. Mark complete
