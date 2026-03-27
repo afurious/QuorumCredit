@@ -5,7 +5,7 @@ use crate::helpers::{
 };
 use crate::reputation::ReputationNftExternalClient;
 use crate::types::{DataKey, LoanRecord, LoanStatus, VouchRecord, DEFAULT_REFERRAL_BONUS_BPS, MIN_VOUCH_AGE};
-use soroban_sdk::{symbol_short, Address, Env, Vec};
+use soroban_sdk::{panic_with_error, symbol_short, Address, Env, Vec};
 
 /// Register a referrer for a borrower. Must be called before `request_loan`.
 /// The referrer cannot be the borrower themselves.
@@ -106,7 +106,9 @@ pub fn request_loan(
             .checked_add(v.stake)
             .ok_or(ContractError::StakeOverflow)?;
     }
-    assert!(total_stake >= threshold, "insufficient trust stake");
+    if total_stake < threshold {
+        panic_with_error!(&env, ContractError::InsufficientFunds);
+    }
 
     let min_vouchers: u32 = env
         .storage()

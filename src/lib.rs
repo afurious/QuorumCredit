@@ -24,6 +24,8 @@ mod multi_asset_test;
 #[cfg(test)]
 mod referral_test;
 #[cfg(test)]
+mod request_loan_insufficient_stake_test;
+#[cfg(test)]
 mod vouch_zero_stake_test;
 mod security_fixes_test;
 #[cfg(test)]
