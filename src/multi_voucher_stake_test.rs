@@ -99,6 +99,16 @@ mod multi_voucher_stake_tests {
         assert!(!loan.defaulted);
     }
 
+    /// get_vouches on a fresh address with no vouches should return None (no entry).
+    #[test]
+    fn test_get_vouches_returns_none_for_address_with_no_vouches() {
+        let s = setup();
+        let fresh = Address::generate(&s.env);
+
+        let result = s.client.get_vouches(&fresh);
+        assert!(result.is_none(), "get_vouches should return None for an address with no vouches");
+    }
+
     /// Verify that a loan request fails when the combined stake falls short of
     /// the threshold, even with multiple vouchers present.
     ///
