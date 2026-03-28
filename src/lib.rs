@@ -24,12 +24,12 @@ mod multi_asset_test;
 // #[cfg(test)]
 mod referral_test;
 // #[cfg(test)]
-mod request_loan_insufficient_stake_test;
 #[cfg(test)]
 mod min_loan_amount_test;
+mod request_loan_insufficient_stake_test;
+mod security_fixes_test;
 #[cfg(test)]
 mod vouch_zero_stake_test;
-mod security_fixes_test;
 // #[cfg(test)]
 mod bug_condition_test;
 #[cfg(test)]
@@ -40,11 +40,11 @@ mod duplicate_loan_test;
 mod get_loan_none_test;
 
 // #[cfg(test)]
-mod slash_multi_voucher_test;
-#[cfg(test)]
-mod paused_state_test;
 #[cfg(test)]
 mod max_vouchers_per_borrower_test;
+#[cfg(test)]
+mod paused_state_test;
+mod slash_multi_voucher_test;
 
 pub use errors::ContractError;
 pub use types::*;
@@ -457,10 +457,7 @@ impl QuorumCreditContract {
     }
 
     /// Issue 109: Execute a previously proposed slash after the delay has passed.
-    pub fn execute_slash_proposal(
-        env: Env,
-        proposal_id: u64,
-    ) -> Result<(), ContractError> {
+    pub fn execute_slash_proposal(env: Env, proposal_id: u64) -> Result<(), ContractError> {
         governance::execute_slash_proposal(env, proposal_id)
     }
 
@@ -480,23 +477,9 @@ impl QuorumCreditContract {
 
     // ── Reputation NFT Tests ──────────────────────────────────────────────────
 
-
-
     // ── Loan Pool Tests ───────────────────────────────────────────────────────
 
-
-
-
-
-
-
     // ── Voucher Cap Tests ─────────────────────────────────────────────────────
-
-
-
-
-
-
 
     pub fn set_slash_vote_quorum(env: Env, admin_signers: Vec<Address>, quorum_bps: u32) {
         helpers::require_admin_approval(&env, &admin_signers);
@@ -505,5 +488,9 @@ impl QuorumCreditContract {
 
     pub fn get_slash_vote_quorum(env: Env) -> u32 {
         governance::get_slash_vote_quorum(env)
+    }
+
+    pub fn get_slash_vote(env: Env, borrower: Address) -> Option<SlashVoteRecord> {
+        governance::get_slash_vote(env, borrower)
     }
 }
