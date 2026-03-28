@@ -139,7 +139,7 @@ pub fn request_loan(
 
     let deadline = now + cfg.loan_duration;
     let loan_id = next_loan_id(&env);
-    let total_yield = amount * cfg.yield_bps / 10_000;
+    let total_yield = bps_of(amount, cfg.yield_bps);
 
     env.storage().persistent().set(
         &DataKey::Loan(loan_id),
@@ -238,6 +238,10 @@ pub fn repay(env: Env, borrower: Address, payment: i128) -> Result<(), ContractE
             .get(&DataKey::Vouches(borrower.clone()))
             .unwrap_or(Vec::new(&env));
         
+        if vouches.is_empty() {
+            panic!("no vouchers found for borrower");
+        }
+
         // Issue 112: Only distribute yield to vouches in the same token as the loan.
         // Verify that available funds exclude slash balance to prevent fund leakage.
         let loan_token = soroban_sdk::token::Client::new(&env, &loan.token_address);

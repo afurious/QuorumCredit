@@ -136,6 +136,10 @@ fn execute_slash(env: &Env, borrower: &Address) -> Result<(), ContractError> {
         .get(&DataKey::Vouches(borrower.clone()))
         .unwrap_or(Vec::new(env));
 
+    if vouches.is_empty() {
+        panic!("no vouchers found for borrower");
+    }
+
     // Mark loan as defaulted first so we can read token_address.
     let mut loan = get_active_loan_record(env, borrower)?;
     validate_loan_active(&loan)?;
