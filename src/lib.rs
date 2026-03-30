@@ -62,6 +62,8 @@ mod vouch_cooldown_test;
 mod repay_protocol_fee_test;
 #[cfg(test)]
 mod is_eligible_token_filter_test;
+#[cfg(test)]
+mod add_allowed_token_sep41_test;
 
 pub use errors::ContractError;
 pub use types::*;

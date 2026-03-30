@@ -1,4 +1,4 @@
-use crate::helpers::{config, require_admin_approval, validate_admin_config};
+use crate::helpers::{config, require_admin_approval, require_valid_token, validate_admin_config};
 use crate::types::{Config, DataKey};
 use soroban_sdk::{symbol_short, Address, BytesN, Env, Vec};
 
@@ -356,6 +356,7 @@ pub fn get_config(env: Env) -> Config {
 
 pub fn add_allowed_token(env: Env, admin_signers: Vec<Address>, token: Address) {
     require_admin_approval(&env, &admin_signers);
+    require_valid_token(&env, &token).expect("invalid token");
     let mut cfg = config(&env);
     assert!(
         !cfg.allowed_tokens.iter().any(|t| t == token) && token != cfg.token,
