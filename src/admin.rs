@@ -252,6 +252,13 @@ pub fn set_reputation_nft(env: Env, admin_signers: Vec<Address>, nft_contract: A
     );
 }
 
+/// Set the minimum allowed vouch stake.
+///
+/// # Arguments
+/// * `env` - Soroban environment
+/// * `admin_signers` - Admin addresses authorizing this call (must meet threshold)
+/// * `amount` - Minimum stake amount, in stroops (0 disables the minimum check).
+///   1 XLM = 10,000,000 stroops.
 pub fn set_min_stake(env: Env, admin_signers: Vec<Address>, amount: i128) {
     require_admin_approval(&env, &admin_signers);
     assert!(amount >= 0, "min stake cannot be negative");
@@ -266,6 +273,13 @@ pub fn set_min_stake(env: Env, admin_signers: Vec<Address>, amount: i128) {
     );
 }
 
+/// Set the maximum loan amount allowed per loan request.
+///
+/// # Arguments
+/// * `env` - Soroban environment
+/// * `admin_signers` - Admin addresses authorizing this call (must meet threshold)
+/// * `amount` - Maximum loan amount, in stroops (0 = no cap enforced).
+///   1 XLM = 10,000,000 stroops.
 pub fn set_max_loan_amount(env: Env, admin_signers: Vec<Address>, amount: i128) {
     require_admin_approval(&env, &admin_signers);
     assert!(amount >= 0, "max loan amount cannot be negative");

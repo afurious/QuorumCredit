@@ -43,6 +43,17 @@ pub fn get_referrer(env: Env, borrower: Address) -> Option<Address> {
         .get(&DataKey::ReferredBy(borrower))
 }
 
+/// Request a loan disbursement.
+///
+/// # Arguments
+/// * `env` - Soroban environment
+/// * `borrower` - Address of the borrower (must sign)
+/// * `amount` - Loan amount, in stroops. Must be ≥ `min_loan_amount`.
+///   1 XLM = 10,000,000 stroops.
+/// * `threshold` - Minimum total vouched stake required, in stroops.
+///   1 XLM = 10,000,000 stroops.
+/// * `loan_purpose` - Human-readable description of the loan purpose
+/// * `token_addr` - Address of the token contract to use for disbursement
 pub fn request_loan(
     env: Env,
     borrower: Address,
@@ -140,7 +151,7 @@ pub fn request_loan(
 
     let deadline = now + cfg.loan_duration;
     let loan_id = next_loan_id(&env);
-    let total_yield = amount * cfg.yield_bps / 10_000;
+    let total_yield = amount * cfg.yield_bps / 10_000; // stroops
 
     env.storage().persistent().set(
         &DataKey::Loan(loan_id),
@@ -186,6 +197,13 @@ pub fn request_loan(
     Ok(())
 }
 
+/// Repay a loan, partially or fully.
+///
+/// # Arguments
+/// * `env` - Soroban environment
+/// * `borrower` - Address of the borrower (must sign)
+/// * `payment` - Payment amount, in stroops (must be > 0 and ≤ outstanding balance).
+///   1 XLM = 10,000,000 stroops.
 pub fn repay(env: Env, borrower: Address, payment: i128) -> Result<(), ContractError> {
     borrower.require_auth();
     require_not_paused(&env)?;

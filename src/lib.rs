@@ -130,7 +130,8 @@ impl QuorumCreditContract {
     /// # Arguments
     /// * `voucher` - Address of the voucher staking tokens
     /// * `borrower` - Address of the borrower being vouched for
-    /// * `stake` - Amount of tokens to stake (must be positive)
+    /// * `stake` - Amount of tokens to stake, in stroops (must be positive).
+    ///   1 XLM = 10,000,000 stroops.
     /// * `token` - Address of the token contract to stake
     ///
     /// # Panics
@@ -156,7 +157,8 @@ impl QuorumCreditContract {
     /// # Arguments
     /// * `voucher` - Address of the voucher staking tokens
     /// * `borrowers` - Vector of borrower addresses
-    /// * `stakes` - Vector of stake amounts (must match borrowers length)
+    /// * `stakes` - Vector of stake amounts, in stroops (must match borrowers length).
+    ///   1 XLM = 10,000,000 stroops.
     /// * `token` - Address of the token contract to stake
     ///
     /// # Panics
@@ -178,7 +180,8 @@ impl QuorumCreditContract {
     /// # Arguments
     /// * `voucher` - Address of the voucher
     /// * `borrower` - Address of the borrower
-    /// * `additional` - Additional amount to stake (must be positive)
+    /// * `additional` - Additional amount to stake, in stroops (must be positive).
+    ///   1 XLM = 10,000,000 stroops.
     ///
     /// # Panics
     /// * If vouch does not exist
@@ -198,7 +201,8 @@ impl QuorumCreditContract {
     /// # Arguments
     /// * `voucher` - Address of the voucher
     /// * `borrower` - Address of the borrower
-    /// * `amount` - Amount to decrease (must be positive and not exceed current stake)
+    /// * `amount` - Amount to decrease, in stroops (must be positive and not exceed current stake).
+    ///   1 XLM = 10,000,000 stroops.
     ///
     /// # Panics
     /// * If vouch does not exist
@@ -316,8 +320,10 @@ impl QuorumCreditContract {
     ///
     /// # Arguments
     /// * `borrower` - Address of the borrower
-    /// * `amount` - Loan amount in stroops
-    /// * `threshold` - Minimum total stake required from vouchers
+    /// * `amount` - Loan amount, in stroops (must be ≥ `min_loan_amount` and ≤ `max_loan_amount`).
+    ///   1 XLM = 10,000,000 stroops.
+    /// * `threshold` - Minimum total stake required from vouchers, in stroops.
+    ///   1 XLM = 10,000,000 stroops.
     /// * `loan_purpose` - Description of the loan purpose
     /// * `token` - Address of the token contract for the loan
     ///
@@ -349,7 +355,8 @@ impl QuorumCreditContract {
     ///
     /// # Arguments
     /// * `borrower` - Address of the borrower
-    /// * `payment` - Payment amount in stroops (must be positive and not exceed outstanding balance)
+    /// * `payment` - Payment amount, in stroops (must be positive and not exceed outstanding balance).
+    ///   1 XLM = 10,000,000 stroops.
     ///
     /// # Panics
     /// * If borrower does not have an active loan
@@ -555,7 +562,8 @@ impl QuorumCreditContract {
     ///
     /// # Arguments
     /// * `admin_signers` - Vector of admin addresses (must meet threshold)
-    /// * `amount` - Minimum stake amount in stroops
+    /// * `amount` - Minimum stake amount, in stroops (0 = no minimum).
+    ///   1 XLM = 10,000,000 stroops.
     ///
     /// # Panics
     /// * If admin approval is insufficient
@@ -567,7 +575,8 @@ impl QuorumCreditContract {
     ///
     /// # Arguments
     /// * `admin_signers` - Vector of admin addresses (must meet threshold)
-    /// * `amount` - Maximum loan amount in stroops (0 = no cap)
+    /// * `amount` - Maximum loan amount, in stroops (0 = no cap).
+    ///   1 XLM = 10,000,000 stroops.
     ///
     /// # Panics
     /// * If admin approval is insufficient
@@ -797,7 +806,8 @@ impl QuorumCreditContract {
     ///
     /// # Arguments
     /// * `borrower` - Address of the borrower
-    /// * `threshold` - Minimum total stake required
+    /// * `threshold` - Minimum total stake required, in stroops.
+    ///   1 XLM = 10,000,000 stroops.
     /// * `token_addr` - Token address to filter vouches by
     ///
     /// # Returns

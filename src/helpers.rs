@@ -32,6 +32,7 @@ pub fn require_not_paused(env: &Env) -> Result<(), ContractError> {
 
 /// Returns `Err(InsufficientFunds)` if `amount` is not strictly positive (≤ 0).
 /// Use this for all numeric inputs that must be > 0 (stakes, loan amounts, thresholds).
+/// All such amounts are denominated in stroops (1 XLM = 10,000,000 stroops).
 pub fn require_positive_amount(_env: &Env, amount: i128) -> Result<(), ContractError> {
     if amount <= 0 {
         return Err(ContractError::InsufficientFunds);
@@ -187,7 +188,16 @@ pub fn validate_admin_config(
     Ok(())
 }
 
-/// Compute basis points: amount * bps / 10_000
+/// Compute basis points of an amount: `amount * bps / 10_000`.
+///
+/// `amount` is expected to be in stroops (1 XLM = 10,000,000 stroops).
+/// The result is also in stroops.
+///
+/// # Examples
+/// ```
+/// // 2% of 1 XLM (10_000_000 stroops) = 200_000 stroops
+/// assert_eq!(bps_of(10_000_000, 200), 200_000);
+/// ```
 pub fn bps_of(amount: i128, bps: u32) -> i128 {
     amount * bps as i128 / 10_000
 }
